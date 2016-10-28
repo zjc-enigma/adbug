@@ -47,15 +47,15 @@ def is_duplicated(detail_res, dup_dict):
     check_list = [u'广告尺寸', u'投放平台', u'广告主', u'营销推广']
     value_list = []
     for key in check_list:
-        value_list.append(str(detail_res[key]))
+        value_list.append(detail_res[key])
 
     check_string = "_".join(value_list)
     if check_string in dup_dict:
-        return true
+        return True
 
     else:
         dup_dict[check_string] = 1
-        return false
+        return False
 
 
 url = 'http://www.adbug.cn/'
@@ -123,6 +123,7 @@ with open('../data/' + keyword + '.json', 'w') as output:
                     if label:
                         value = item('span').text()
                         print label, value
+                        #print repr(label), repr(value)
                         detail_res[label] = value
 
                 if is_duplicated(detail_res, duplicated_dict):
