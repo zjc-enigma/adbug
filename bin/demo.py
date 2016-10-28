@@ -32,73 +32,96 @@ def download_resource(url):
     return resource_data
 
 
+def find_next_page_url(doc):
+    next_page_url = ''
+
+    NEXT_PAGE_STRING = u'\xe4\xb8\x8b\xe4\xb8\x80\xe9\xa1\xb5'
+    paging_list = doc('div.paging')('a')
+    for page in paging_list.items():
+        if page.text() == NEXT_PAGE_STRING:
+            next_page_url = 'http://www.adbug.cn' + page.attr('href')
+            print "found next page url: %s" % next_page_url
+            
+    return next_page_url
 
 url = 'http://www.adbug.cn/'
 search_url = 'http://www.adbug.cn/Search/all'
 session = requests.session()
-
 ## set key word
 if len(sys.argv) == 2:
     keyword = sys.argv[1]
 else:
-    keyword = '采购'
+    print "usage : python demo.py [keywords]"
+    sys.exit(-1)
+
+
 params = {'wd': keyword}
+
+next_url = ''
 res = session.get(search_url, params=params)
 
-doc = pq(res.content)
-all_items = doc('div.ads')('div.item')
-item = all_items.eq(0)
-ad_url = item('div.thumb')('a.img').attr('href')
-thumb_url = item('div.thumb')('img').attr('src')
-ad_text = item('div.meta').text()
+with open('../data/' + keyword + '.json', 'w') as output:
+    while True:
+        try:
+            if next_url:
+                res = session.get(next_url)
 
-#detail_data = json.loads(doc('div.content-left')('script').text()[11:-8])
-detail_data_list = json.loads(doc('div.content-left')('script').text().split('\n')[0][11:-1])
-# with open("detail", 'w') as f:
-#     f.write(detail_data)
-# detail_data = detail_data_list[0]
+            doc = pq(res.content)
+            all_items = doc('div.ads')('div.item')
+            item = all_items.eq(0)
+            ad_url = item('div.thumb')('a.img').attr('href')
+            thumb_url = item('div.thumb')('img').attr('src')
+            ad_text = item('div.meta').text()
 
-crawl_res = []
+            detail_data_list = json.loads(doc('div.content-left')('script').text().split('\n')[0][11:-1])
+            crawl_res = []
 
-for detail_data in detail_data_list:
-    res = {}
+        except Exception, e:
+            print "error in get doc, exiting"
+            break
 
-    res['url'] = detail_data['d_l']
-    res['ad_img_url'] = detail_data['r_url']
-    res['ad_weight'] = detail_data['w']
-    res['ad_height'] = detail_data['h']
-    res['ad_id'] = detail_data['id']
-    res['ad_meta'] = detail_data['meta']
-    res['ad_type'] = detail_data['type']
+        for detail_data in detail_data_list[:3]:
+            try:
+                res = {}
 
-    save_path = '..' + urlparse(res['ad_img_url']).path
-    resource_data = download_resource(res['ad_img_url'])
-    save_to_file(resource_data, save_path)
-    print "saved img to %s" % save_path
+                res['url'] = detail_data['d_l']
+                res['ad_img_url'] = detail_data['r_url']
+                res['ad_weight'] = detail_data['w']
+                res['ad_height'] = detail_data['h']
+                res['ad_id'] = detail_data['id']
+                res['ad_meta'] = detail_data['meta']
+                res['ad_type'] = detail_data['type']
+                save_path = '..' + urlparse(res['ad_img_url']).path
 
-    detail_doc = pq(res['ad_meta'])
-    detail_item_list = detail_doc('li')
-    detail_res = {}
-    for item in detail_item_list.items():
-        label = item('label').text().strip().replace(':', '')
-        if label:
-            value = item('span').text()
-            print label, value
-            detail_res[label] = value
+                resource_data = download_resource(res['ad_img_url'])
+                save_to_file(resource_data, save_path)
+                print "saved img to %s" % save_path
 
-    res['detail'] = detail_res
-    crawl_res.append(res)
-    print "============================================================"
+                res['save_path'] = save_path
+                detail_doc = pq(res['ad_meta'])
+                detail_item_list = detail_doc('li')
+                detail_res = {}
+                for item in detail_item_list.items():
+                    label = item('label').text().strip().replace(':', '')
+                    if label:
+                        value = item('span').text()
+                        print label, value
+                        detail_res[label] = value
+
+                res['detail'] = detail_res
+                crawl_res.append(res)
+                print "============================================================"
+                output.write(json.dumps(res, ensure_ascii=False, sort_keys=True).encode('utf8') + '\n')
+
+            except Exception, e:
+                print "error in fetching, skiped", str(e)
+                continue
 
 
+        next_url = find_next_page_url(doc)
 
+        if not next_url:
+            print "there is no next page to crawl, exiting"
+            break
 
-
-
-
-
-
-
-
-
-
+print "all jobs done :)"
