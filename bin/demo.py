@@ -17,8 +17,6 @@ def save_to_file(resource_data, save_path):
         except OSError as exc: # Guard against race condition
             print "save exception:", str(exc)
             raise
-            #if exc.errno != errno.EEXIST:
-            #    raise
 
     with open(save_path, "wb") as f:
         f.write(resource_data)
@@ -44,6 +42,22 @@ def find_next_page_url(doc):
             
     return next_page_url
 
+
+def is_duplicated(detail_res, dup_dict):
+    check_list = [u'广告尺寸', u'投放平台', u'广告主', u'营销推广']
+    value_list = []
+    for key in check_list:
+        value_list.append(str(detail_res[key]))
+
+    check_string = "_".join(value_list)
+    if check_string in dup_dict:
+        return true
+
+    else:
+        dup_dict[check_string] = 1
+        return false
+
+
 url = 'http://www.adbug.cn/'
 search_url = 'http://www.adbug.cn/Search/all'
 session = requests.session()
@@ -59,6 +73,8 @@ params = {'wd': keyword}
 
 next_url = ''
 res = session.get(search_url, params=params)
+
+duplicated_dict = {}
 
 with open('../data/' + keyword + '.json', 'w') as output:
     while True:
@@ -80,7 +96,7 @@ with open('../data/' + keyword + '.json', 'w') as output:
             print "error in get doc, exiting"
             break
 
-        for detail_data in detail_data_list[:3]:
+        for detail_data in detail_data_list:
             try:
                 res = {}
 
@@ -89,7 +105,8 @@ with open('../data/' + keyword + '.json', 'w') as output:
                 res['ad_weight'] = detail_data['w']
                 res['ad_height'] = detail_data['h']
                 res['ad_id'] = detail_data['id']
-                res['ad_meta'] = detail_data['meta']
+                
+                ad_meta = detail_data['meta']
                 res['ad_type'] = detail_data['type']
                 save_path = '..' + urlparse(res['ad_img_url']).path
 
@@ -98,7 +115,7 @@ with open('../data/' + keyword + '.json', 'w') as output:
                 print "saved img to %s" % save_path
 
                 res['save_path'] = save_path
-                detail_doc = pq(res['ad_meta'])
+                detail_doc = pq(ad_meta)
                 detail_item_list = detail_doc('li')
                 detail_res = {}
                 for item in detail_item_list.items():
@@ -107,6 +124,10 @@ with open('../data/' + keyword + '.json', 'w') as output:
                         value = item('span').text()
                         print label, value
                         detail_res[label] = value
+
+                if is_duplicated(detail_res, duplicated_dict):
+                    print "found duplicated skiped"
+                    continue
 
                 res['detail'] = detail_res
                 crawl_res.append(res)
