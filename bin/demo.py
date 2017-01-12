@@ -39,7 +39,7 @@ def find_next_page_url(doc):
         if page.text() == NEXT_PAGE_STRING:
             next_page_url = 'http://www.adbug.cn' + page.attr('href')
             print "found next page url: %s" % next_page_url
-            
+
     return next_page_url
 
 
