@@ -1,13 +1,11 @@
-# -*- coding: utf-8 -*-
 import sys
 import os
 from pyquery import PyQuery as pq
 import urllib
-import urllib2
 import requests
 import json
-from urlparse import urlparse, parse_qs
-import browsercookie
+from collections import Counter
+import pdb
 
 def save_to_file(resource_data, save_path):
     if not os.path.exists(os.path.dirname(save_path)):
@@ -15,7 +13,7 @@ def save_to_file(resource_data, save_path):
             os.makedirs(os.path.dirname(save_path))
 
         except OSError as exc: # Guard against race condition
-            print "save exception:", str(exc)
+            print("save exception:", str(exc))
             raise
 
     with open(save_path, "wb") as f:
@@ -23,11 +21,12 @@ def save_to_file(resource_data, save_path):
 
 
 def download_resource(url):
-    cj = browsercookie.chrome()
-    opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-    ret = opener.open(url)
-    resource_data = ret.read()
-    return resource_data
+    # cj = browsercookie.chrome()
+    # opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
+    # ret = opener.open(url)
+    # resource_data = ret.read()
+    response = requests.get(url)
+    return response.content
 
 
 def find_next_page_url(doc):
@@ -38,7 +37,7 @@ def find_next_page_url(doc):
     for page in paging_list.items():
         if page.text() == NEXT_PAGE_STRING:
             next_page_url = 'http://www.adbug.cn' + page.attr('href')
-            print "found next page url: %s" % next_page_url
+            print("found next page url: %s" % next_page_url)
 
     return next_page_url
 
@@ -58,92 +57,110 @@ def is_duplicated(detail_res, dup_dict):
         return False
 
 
-url = 'http://www.adbug.cn/'
-search_url = 'http://www.adbug.cn/Search/all'
-session = requests.session()
-## set key word
-if len(sys.argv) == 2:
-    keyword = sys.argv[1]
-else:
-    print "usage : python demo.py [keywords]"
-    sys.exit(-1)
 
+if __name__ == '__main__':
 
-params = {'wd': keyword}
+    url = 'http://www.adbug.cn/'
+    #search_url = 'http://www.adbug.cn/Search/all'
+    search_url = 'http://www.adbug.cn/home/search/ads'
+    session = requests.session()
+    ## set key word
+    # if len(sys.argv) == 2:
+    #     keyword = sys.argv[1]
+    # else:
+    #     print("usage : python demo.py [keywords]")
+    #     sys.exit(-1)
+    keyword = "尚德"
+    MAX_PAGE_NUM = 10
+    #http://www.adbug.cn/home/search/ads?wd=%E5%B0%9A%E5%BE%B7
 
-next_url = ''
-res = session.get(search_url, params=params)
+    params = {'wd': keyword, 'pn': 1}
+    #next_url = None
+    #res = session.get(search_url, params=params)
+    duplicated_dict = {}
+    ad_text_list = []
 
-duplicated_dict = {}
-
-with open('../data/' + keyword + '.json', 'w') as output:
-    while True:
-        try:
-            if next_url:
-                res = session.get(next_url)
-
+    with open('../data/' + keyword + '.json', 'w') as output:
+        while True:
+            res = session.get(search_url, params=params)
             doc = pq(res.content)
-            all_items = doc('div.ads')('div.item')
-            item = all_items.eq(0)
-            ad_url = item('div.thumb')('a.img').attr('href')
-            thumb_url = item('div.thumb')('img').attr('src')
-            ad_text = item('div.meta').text()
+            all_items = doc('div.item')
+            for item in all_items.items():
+                #ad_url = item('div.thumb')('a').attr('href')
+                thumb_url = item('img').attr('src')
+                # ad_text = item('div.meta').text()
+                meta = json.loads(item('div.item_meta').text())
+                title = meta['title']
+                name = meta['a']['name']
+                n = meta['n']
+                ad_text_list.append(title)
+                ad_text_list.append(name)
+                ad_text_list.append(n)
 
-            detail_data_list = json.loads(doc('div.content-left')('script').text().split('\n')[0][11:-1])
-            crawl_res = []
+            params['pn'] += 1
+            if params['pn'] > MAX_PAGE_NUM:
+                break
 
-        except Exception, e:
-            print "error in get doc, exiting"
-            break
+        text_freq_list = [ ad_text_list.count(text) for text in ad_text_list ]
+        text_count_dict = dict(zip(ad_text_list, text_freq_list))
+        t = [(text_count_dict[k], k) for k in text_count_dict]
+        t.sort()
+        t.reverse()
 
-        for detail_data in detail_data_list:
-            try:
-                res = {}
+        for item in t:
+            print(item[1], item[0])
 
-                res['url'] = detail_data['d_l']
-                res['ad_img_url'] = detail_data['r_url']
-                res['ad_weight'] = detail_data['w']
-                res['ad_height'] = detail_data['h']
-                res['ad_id'] = detail_data['id']
-                
-                ad_meta = detail_data['meta']
-                res['ad_type'] = detail_data['type']
-                save_path = '..' + urlparse(res['ad_img_url']).path
+                #ad_url = item('div.thumb')('a.img').attr('href')
+                #thumb_url = item('div.thumb')('img').attr('src')
+                #ad_text = item('div.meta').text()
 
-                resource_data = download_resource(res['ad_img_url'])
-                save_to_file(resource_data, save_path)
-                print "saved img to %s" % save_path
+                # detail_data_list = json.loads(doc('div.content-left')('script').text().split('\n')[0][11:-1])
+                # crawl_res = []
 
-                res['save_path'] = save_path
-                detail_doc = pq(ad_meta)
-                detail_item_list = detail_doc('li')
-                detail_res = {}
-                for item in detail_item_list.items():
-                    label = item('label').text().strip().replace(':', '')
-                    if label:
-                        value = item('span').text()
-                        print label, value
-                        #print repr(label), repr(value)
-                        detail_res[label] = value
+            # except Exception as e:
+            #     print("error in get doc, exiting", e)
+            #     break
 
-                if is_duplicated(detail_res, duplicated_dict):
-                    print "found duplicated skiped"
-                    continue
+            # for detail_data in detail_data_list:
+            #     try:
+            #         res = {}
 
-                res['detail'] = detail_res
-                crawl_res.append(res)
-                print "============================================================"
-                output.write(json.dumps(res, ensure_ascii=False, sort_keys=True).encode('utf8') + '\n')
+            #         res['url'] = detail_data['d_l']
+            #         res['ad_img_url'] = detail_data['r_url']
+            #         res['ad_weight'] = detail_data['w']
+            #         res['ad_height'] = detail_data['h']
+            #         res['ad_id'] = detail_data['id']
 
-            except Exception, e:
-                print "error in fetching, skiped", str(e)
-                continue
+            #         ad_meta = detail_data['meta']
+            #         res['ad_type'] = detail_data['type']
+            #         save_path = '..' + urllib.parse.urlparse(res['ad_img_url']).path
 
+            #         resource_data = download_resource(res['ad_img_url'])
+            #         save_to_file(resource_data, save_path)
+            #         print("saved img to %s" % save_path)
 
-        next_url = find_next_page_url(doc)
+            #         res['save_path'] = save_path
+            #         detail_doc = pq(ad_meta)
+            #         detail_item_list = detail_doc('li')
+            #         detail_res = {}
+            #         for item in detail_item_list.items():
+            #             label = item('label').text().strip().replace(':', '')
+            #             if label:
+            #                 value = item('span').text()
+            #                 print(label, value)
+            #                 detail_res[label] = value
+            #         if is_duplicated(detail_res, duplicated_dict):
+            #             print("found duplicated skiped")
+            #             continue
+            #         res['detail'] = detail_res
+            #         crawl_res.append(res)
+            #         print("============================================================")
+            #         output.write(json.dumps(res, ensure_ascii=False, sort_keys=True).encode('utf8') + '\n')
+            #     except Exception as e:
+            #         print("error in fetching, skiped", str(e))
+            #         continue
+            # next_url = find_next_page_url(doc)
+            # if not next_url:
+            #     print("there is no next page to crawl, exiting")
+            #     break
 
-        if not next_url:
-            print "there is no next page to crawl, exiting"
-            break
-
-print "all jobs done :)"
