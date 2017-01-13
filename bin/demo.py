@@ -5,6 +5,9 @@ import urllib
 import requests
 import json
 from collections import Counter
+from time import sleep
+import jieba
+import re
 import pdb
 
 def save_to_file(resource_data, save_path):
@@ -57,11 +60,10 @@ def is_duplicated(detail_res, dup_dict):
         return False
 
 
+def crawl_by_keyword(keyword):
 
-if __name__ == '__main__':
-
+    MAX_PAGE_NUM = 10
     url = 'http://www.adbug.cn/'
-    #search_url = 'http://www.adbug.cn/Search/all'
     search_url = 'http://www.adbug.cn/home/search/ads'
     session = requests.session()
     ## set key word
@@ -70,9 +72,6 @@ if __name__ == '__main__':
     # else:
     #     print("usage : python demo.py [keywords]")
     #     sys.exit(-1)
-    keyword = "尚德"
-    MAX_PAGE_NUM = 10
-    #http://www.adbug.cn/home/search/ads?wd=%E5%B0%9A%E5%BE%B7
 
     params = {'wd': keyword, 'pn': 1}
     #next_url = None
@@ -80,12 +79,12 @@ if __name__ == '__main__':
     duplicated_dict = {}
     ad_text_list = []
 
-    with open('../data/' + keyword + '.json', 'w') as output:
-        while True:
-            res = session.get(search_url, params=params)
-            doc = pq(res.content)
-            all_items = doc('div.item')
-            for item in all_items.items():
+    while True:
+        res = session.get(search_url, params=params)
+        doc = pq(res.content)
+        all_items = doc('div.item')
+        for item in all_items.items():
+            try:
                 #ad_url = item('div.thumb')('a').attr('href')
                 thumb_url = item('img').attr('src')
                 # ad_text = item('div.meta').text()
@@ -96,19 +95,142 @@ if __name__ == '__main__':
                 ad_text_list.append(title)
                 ad_text_list.append(name)
                 ad_text_list.append(n)
+                print('crawled title of adid {} with title {} from {}'.format(meta['a']['m'], title, meta['tg']))
 
-            params['pn'] += 1
-            if params['pn'] > MAX_PAGE_NUM:
-                break
+            except Exception as e:
+                print(e)
+                continue
 
-        text_freq_list = [ ad_text_list.count(text) for text in ad_text_list ]
-        text_count_dict = dict(zip(ad_text_list, text_freq_list))
-        t = [(text_count_dict[k], k) for k in text_count_dict]
-        t.sort()
-        t.reverse()
+        params['pn'] += 1
+        sleep(5)
 
-        for item in t:
-            print(item[1], item[0])
+        if params['pn'] > MAX_PAGE_NUM:
+            break
+
+    text_freq_list = [ ad_text_list.count(text) for text in ad_text_list ]
+    text_count_dict = dict(zip(ad_text_list, text_freq_list))
+    t = [(text_count_dict[k], k) for k in text_count_dict]
+    return t
+
+
+def analytics(text_list):
+    
+    text_len_list = []
+    for text in text_list:
+        text_len = len(text)
+        text_len_list.append(text_len)
+
+    count_list = [ text_len_list.count(text_len) for text_len in text_len_list]
+    analytics = dict(zip(text_len_list, count_list))
+    t = [(analytics[k], k) for k in analytics]
+    t.sort()
+    t.reverse()
+    for i in t:
+        print(i)
+
+
+def tokenize_zh_line(zh_line, method='jieba'):
+    """
+    zh_line:
+    Chinese string line
+
+    method:
+    tokenize method , default using jieba
+
+    Returns:
+    token Chinese word list
+    """
+    try:
+        zh_line = zh_line.strip()
+        zh_line = " ".join(re.findall(r'[\u4e00-\u9fff\w\_]+', zh_line))
+
+        tokenized_list = jieba.cut(zh_line, cut_all=False)
+        res = [ word for word in tokenized_list if word != ' ' ]
+        return res
+
+    except AttributeError as attr:
+        print(zh_line)
+        return []
+
+
+def filter_and_ranking(res_list):
+
+    MAX_TEXT_LEN = 28
+    MIN_TEXT_LEN = 7
+    big_word_list = ["如何","怎样","怎么","何以","知道","揭秘","爆料","劲爆","内幕","真相","隐情","惊","紧急","十万火急","吓一跳","围观","竟然","原来","不可思议","疯转","疯了","落伍","亏大了","甩几条街","不是","［","｛","[","{","？","！","?","!","盘点","合集","都在这里","大全","总览","赚大了","赠送","红包","惊呼","给力","快抢","疯抢","免费","便宜","包邮","折扣","降价","优惠","送礼","返现","好消息","大消息","今日消息","最新消息","新政出台","HOT","关注","热点","重磅消息","美女","美色","偷窥","私密","占便宜"]
+
+    good_text = []
+    normal_text = []
+
+    for freq,text in res_list:
+        if len(text) > MAX_TEXT_LEN or len(text) < MIN_TEXT_LEN:
+            continue
+        text_seg = tokenize_zh_line(text)
+
+        if any(t in big_word_list for t in text_seg):
+            good_text.append((text, freq))
+
+        else:
+            normal_text.append((text, freq))
+
+    good_text.sort(key=lambda tup: tup[1])
+    good_text.reverse()
+    normal_text.sort(key=lambda tup: tup[1])
+    normal_text.reverse()
+    # remove duplicated
+    total_list = good_text + normal_text
+    text_dict = {}
+    for item in total_list:
+        text = item[0].strip()
+        if text in text_dict:
+            total_list.remove(item)
+        else:
+            text_dict[text] = 0
+
+    return total_list
+
+
+
+
+if __name__ == '__main__':
+
+    keyword_list = ["尚德", "自考", "职业培训", "教育", "学历教育", "成人自考", "学历培训"]
+    #keyword_list = ["尚德"]
+    res_list = []
+    for keyword in keyword_list:
+        res_list += crawl_by_keyword(keyword)
+
+    res_list.sort()
+    res_list.reverse()
+    with open('../data/res.sorted', 'w') as wfd:
+        for res in res_list:
+            wfd.write("{}\t{}\n".format(res[1], res[0]))
+
+
+
+    r = []
+    with open('../data/res.sorted', 'r') as rfd:
+        for res in rfd:
+            res = res.strip().split('\t')
+            if len(res) != 2:
+                continue
+            else:
+                r.append(res[0])
+
+
+    
+    res_list = []
+    with open('../data/res.sorted', 'r') as rfd:
+        for res in rfd:
+            res = res.strip().split()
+            if len(res) != 2:
+                continue
+            res_list.append((int(res[0]), res[1]))
+
+    filtered_list = filter_and_ranking(res_list)
+
+
+
 
                 #ad_url = item('div.thumb')('a.img').attr('href')
                 #thumb_url = item('div.thumb')('img').attr('src')
