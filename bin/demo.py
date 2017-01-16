@@ -8,6 +8,8 @@ from collections import Counter
 from time import sleep
 import jieba
 import re
+import pandas as pd
+import numpy as np
 import pdb
 
 def save_to_file(resource_data, save_path):
@@ -89,13 +91,15 @@ def crawl_by_keyword(keyword):
                 thumb_url = item('img').attr('src')
                 # ad_text = item('div.meta').text()
                 meta = json.loads(item('div.item_meta').text())
-                title = meta['title']
-                name = meta['a']['name']
-                n = meta['n']
+                title = meta.get('title')
+                name = None
+                if 'a' in meta:
+                    name = meta.get('a').get('name')
+                n = meta.get('n')
                 ad_text_list.append(title)
                 ad_text_list.append(name)
                 ad_text_list.append(n)
-                print('crawled title of adid {} with title {} from {}'.format(meta['a']['m'], title, meta['tg']))
+                print('crawled  title {} from {}'.format(title, meta.get('tg')))
 
             except Exception as e:
                 print(e)
@@ -190,44 +194,86 @@ def filter_and_ranking(res_list):
     return total_list
 
 
+def rewrite_name(name):
+    
+    name = name.replace('（', " ")
+    name = name.replace('）', " ")
+    name = name.replace('(', " ")
+    name = name.replace(')', " ")
+
+    if name.endswith('有限公司'):
+        return re.sub('有限公司$',"", name)
+
+    if name.endswith('公司'):
+        return re.sub('公司$',"", name)
+
+    return name
+
+
+def rewrite_category(category):
+    if category.endswith('类'):
+        return re.sub('类$', "", category)
+
+    return category
+
+
+
+def get_all_advertiser_name_with_category():
+    import MySQLdb
+    conn = MySQLdb.connect(host='192.168.144.237',
+                       user='data',
+                       passwd='PIN239!@#$%^&8',
+                       charset='utf8')
+    conn.select_db('category')
+    sql = """select * from advertiser_industry"""
+    d = pd.read_sql(sql=sql, con=conn)
+    name_list = [ rewrite_name(name)
+                  for name in list(np.unique(d['name']))]
+
+    industry_list = [ rewrite_category(category)
+                      for category in list(np.unique(d['industry_1'].append(d['industry_2'])))]
+
+    return name_list
 
 
 if __name__ == '__main__':
 
-    keyword_list = ["尚德", "自考", "职业培训", "教育", "学历教育", "成人自考", "学历培训"]
-    #keyword_list = ["尚德"]
+    #keyword_list = ["尚德", "自考", "职业培训", "教育", "学历教育", "成人自考", "学历培训"]
+    keyword_list = get_all_advertiser_name_with_category()
     res_list = []
     for keyword in keyword_list:
         res_list += crawl_by_keyword(keyword)
 
-    res_list.sort()
-    res_list.reverse()
-    with open('../data/res.sorted', 'w') as wfd:
-        for res in res_list:
-            wfd.write("{}\t{}\n".format(res[1], res[0]))
+    #res_list.sort()
+    #res_list.reverse()
+    res_list = filter_and_ranking(res_list)
+
+    with open('../data/name.sorted', 'w') as wfd:
+        for keyword, res in zip(keyword_list, res_list):
+            wfd.write("{}\t{}\t{}\n".format(res[1], res[0], keyword))
 
 
 
-    r = []
-    with open('../data/res.sorted', 'r') as rfd:
-        for res in rfd:
-            res = res.strip().split('\t')
-            if len(res) != 2:
-                continue
-            else:
-                r.append(res[0])
+    # r = []
+    # with open('../data/res.sorted', 'r') as rfd:
+    #     for res in rfd:
+    #         res = res.strip().split('\t')
+    #         if len(res) != 2:
+    #             continue
+    #         else:
+    #             r.append(res[0])
 
 
     
-    res_list = []
-    with open('../data/res.sorted', 'r') as rfd:
-        for res in rfd:
-            res = res.strip().split()
-            if len(res) != 2:
-                continue
-            res_list.append((int(res[0]), res[1]))
+    # res_list = []
+    # with open('../data/res.sorted', 'r') as rfd:
+    #     for res in rfd:
+    #         res = res.strip().split()
+    #         if len(res) != 2:
+    #             continue
+    #         res_list.append((int(res[0]), res[1]))
 
-    filtered_list = filter_and_ranking(res_list)
+    # filtered_list = filter_and_ranking(res_list)
 
 
 
