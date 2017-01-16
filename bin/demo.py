@@ -146,7 +146,7 @@ def tokenize_zh_line(zh_line, method='jieba'):
     """
     try:
         zh_line = zh_line.strip()
-        zh_line = " ".join(re.findall(r'[\u4e00-\u9fff\w\_]+', zh_line))
+        #zh_line = " ".join(re.findall(r'[\u4e00-\u9fff\w\_]+', zh_line))
 
         tokenized_list = jieba.cut(zh_line, cut_all=False)
         res = [ word for word in tokenized_list if word != ' ' ]
@@ -166,8 +166,9 @@ def filter_and_ranking(res_list):
     good_text = []
     normal_text = []
 
-    for freq,text in res_list:
-        if len(text) > MAX_TEXT_LEN or len(text) < MIN_TEXT_LEN:
+    for freq, text in res_list:
+        # text is none or not proper
+        if not text or len(text) > MAX_TEXT_LEN or len(text) < MIN_TEXT_LEN:
             continue
         text_seg = tokenize_zh_line(text)
 
@@ -242,15 +243,16 @@ if __name__ == '__main__':
     keyword_list = get_all_advertiser_name_with_category()
     res_list = []
     for keyword in keyword_list:
-        res_list += crawl_by_keyword(keyword)
+        res_list.append(filter_and_ranking(crawl_by_keyword(keyword)))
 
-    #res_list.sort()
-    #res_list.reverse()
-    res_list = filter_and_ranking(res_list)
+    # res_list.sort()
+    # res_list.reverse()
+    # res_list = res_list)
 
     with open('../data/name.sorted', 'w') as wfd:
         for keyword, res in zip(keyword_list, res_list):
-            wfd.write("{}\t{}\t{}\n".format(res[1], res[0], keyword))
+            for item in res:
+                wfd.write("{}\t{}\t{}\n".format(item[1], item[0], keyword))
 
 
 
